@@ -1,0 +1,599 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>ASCII Camera — 256 Color</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: #000;
+    color: #aaa;
+    font-family: 'Courier New', monospace;
+    height: 100vh;
+    height: 100dvh;
+    width: 100vw;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* ── Controls drawer ── */
+  .controls-wrapper {
+    position: relative;
+    z-index: 10;
+    flex-shrink: 0;
+  }
+
+  .controls-toggle {
+    display: none;
+    width: 100%;
+    background: #111;
+    border: none;
+    border-bottom: 1px solid #222;
+    color: #0f0;
+    font-family: inherit;
+    font-size: 0.8rem;
+    padding: 8px;
+    cursor: pointer;
+    text-align: center;
+  }
+  .controls-toggle:hover { background: #1a1a1a; }
+  .controls-toggle .arrow { display: inline-block; transition: transform 0.2s; }
+  .controls-wrapper.collapsed .controls-toggle .arrow { transform: rotate(180deg); }
+
+  .controls {
+    display: flex;
+    gap: 0.8rem;
+    padding: 6px 12px;
+    flex-wrap: wrap;
+    justify-content: center;
+    align-items: center;
+    background: #111;
+    border-bottom: 1px solid #222;
+    transition: max-height 0.25s ease, padding 0.25s ease, opacity 0.2s ease;
+    overflow: hidden;
+  }
+
+  .controls-wrapper.collapsed .controls {
+    max-height: 0;
+    padding-top: 0;
+    padding-bottom: 0;
+    opacity: 0;
+    border-bottom: none;
+  }
+
+  .controls label {
+    font-size: 0.7rem;
+    color: #666;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
+  .controls select,
+  .controls input[type="range"] {
+    background: #1a1a1a;
+    color: #0f0;
+    border: 1px solid #333;
+    border-radius: 3px;
+    padding: 2px 6px;
+    font-family: inherit;
+    font-size: 0.75rem;
+  }
+
+  .controls input[type="range"] {
+    width: 80px;
+    vertical-align: middle;
+  }
+
+  .ctrl-group { text-align: center; }
+
+  .size-val {
+    display: inline-block;
+    min-width: 2.2em;
+    text-align: right;
+    color: #0f0;
+    font-size: 0.75rem;
+  }
+
+  .controls button {
+    background: #0f0;
+    color: #000;
+    border: none;
+    border-radius: 3px;
+    padding: 5px 14px;
+    font-family: inherit;
+    font-weight: bold;
+    font-size: 0.8rem;
+    cursor: pointer;
+  }
+  .controls button:hover { background: #3f3; }
+  .controls button.stop { background: #f33; color: #fff; }
+  .controls button.stop:hover { background: #f66; }
+
+  /* ── ASCII output fills remaining space ── */
+  #ascii-container {
+    flex: 1;
+    overflow: hidden;
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  #ascii-canvas { image-rendering: pixelated; }
+
+  #char-probe {
+    position: absolute;
+    visibility: hidden;
+    white-space: pre;
+    font-family: 'Courier New', monospace;
+    pointer-events: none;
+  }
+
+  #message {
+    position: absolute;
+    color: #0f0;
+    font-size: 1rem;
+    font-family: 'Courier New', monospace;
+    text-align: center;
+    padding: 1rem;
+  }
+
+  video { display: none; }
+
+  #fps-display {
+    position: fixed;
+    bottom: 6px;
+    right: 10px;
+    font-size: 0.65rem;
+    color: #444;
+    z-index: 20;
+  }
+
+  #size-display {
+    position: fixed;
+    bottom: 6px;
+    left: 10px;
+    font-size: 0.65rem;
+    color: #444;
+    z-index: 20;
+  }
+
+  @media (max-width: 600px) {
+    .controls-toggle { display: block; }
+    .controls { gap: 0.5rem; padding: 6px 8px; }
+    .ctrl-group { font-size: 0.65rem; }
+  }
+</style>
+</head>
+<body>
+
+<div class="controls-wrapper" id="controls-wrapper">
+  <button class="controls-toggle" id="controls-toggle" onclick="toggleControls()">
+    <span class="arrow">▲</span> Controls <span class="arrow">▲</span>
+  </button>
+  <div class="controls">
+    <div class="ctrl-group">
+      <label>Charset</label><br>
+      <select id="charset" onchange="flushBuffer()">
+        <option value="bourke70" selected="">Bourke 70</option>
+        <option value="bourke10">Bourke 10</option>
+        <option value="aalib">AAlib</option>
+        <option value="cp437">CP437 Blocks</option>
+        <option value="hatching">Hatching</option>
+        <option value="braille">Braille Dots</option>
+        <option value="cyborg">Cyborg</option>
+        <option value="occult">Occult</option>
+      </select>
+    </div>
+    <div class="ctrl-group">
+      <label>Palette</label><br>
+      <select id="palette" onchange="flushBuffer()">
+        <option value="xterm256" selected="">xterm 256</option>
+        <option value="ansi16">ANSI 16</option>
+        <option value="cga">CGA</option>
+        <option value="green">Green Mono</option>
+        <option value="amber">Amber Mono</option>
+        <option value="grayscale">Grayscale 24</option>
+        <option value="truecolor">True Color</option>
+      </select>
+    </div>
+    <div class="ctrl-group">
+      <label>Size <span class="size-val" id="size-val">18</span>px</label><br>
+      <input type="range" id="font-size" min="8" max="40" value="18" step="1" oninput="document.getElementById('size-val').textContent = this.value; flushBuffer()">
+    </div>
+    <div class="ctrl-group">
+      <label>FPS <span class="size-val" id="fps-val">18</span></label><br>
+      <input type="range" id="fps-slider" min="1" max="20" value="18" step="1" oninput="document.getElementById('fps-val').textContent = this.value; FRAME_INTERVAL = 1000 / parseInt(this.value);">
+    </div>
+    <div class="ctrl-group">
+      <label>Bright <span class="size-val" id="bright-val">0.65</span></label><br>
+      <input type="range" id="bright-slider" min="0.2" max="1.0" value="0.65" step="0.05" oninput="document.getElementById('bright-val').textContent = parseFloat(this.value).toFixed(2); flushBuffer();">
+    </div>
+    <div class="ctrl-group">
+      <label>Contrast <span class="size-val" id="contrast-val">1.00</span></label><br>
+      <input type="range" id="contrast-slider" min="0.5" max="3.0" value="1.0" step="0.05" oninput="document.getElementById('contrast-val').textContent = parseFloat(this.value).toFixed(2); flushBuffer();">
+    </div>
+    <button id="start-btn" aria-label="Start camera" onclick="startCamera()">▶ Start</button>
+    <button id="stop-btn" class="stop" aria-label="Stop camera" onclick="stopCamera()" style="display:none;">■ Stop</button>
+    <div class="ctrl-group">
+      <span id="debug-display" style="color:#0f0; font-size:0.75rem; white-space:nowrap;">—</span>
+    </div>
+  </div>
+</div>
+
+<div id="ascii-container">
+  <canvas id="ascii-canvas"></canvas>
+  <span id="char-probe">M</span>
+  <div id="message">Press "▶ Start" to begin</div>
+</div>
+
+<div id="fps-display"></div>
+<div id="size-display"></div>
+
+<video id="video" autoplay="" playsinline="" muted=""></video>
+
+<script>
+// ─── Config ───
+let FRAME_INTERVAL = 1000 / 18;
+
+// ─── Grid cache ───
+let cachedCharSize = null;
+let cachedFontSize = -1;
+let cachedContainerRect = null;
+let gridDirty = true;
+window.addEventListener('resize', () => { gridDirty = true; cachedContainerRect = null; flushBuffer(); });
+
+// ─── Controls drawer (mobile) ───
+function toggleControls() {
+  controlsWrapper.classList.toggle('collapsed');
+  cachedContainerRect = null;
+  flushBuffer();
+}
+function autoCollapseOnMobile() {
+  if (window.innerWidth <= 600) {
+    controlsWrapper.classList.add('collapsed');
+  }
+}
+
+// ─── Character sets ───
+const CHARSETS = {
+  bourke70:  " .'`^\",:;Il!i><~+_-?][}{1)(|\\/tfjrxnuvczXYUJCLQ0OZmwqpdbkhao*#MW&8%B@$",
+  bourke10:  ' .:-=+*#%@',
+  aalib:     ' .,:;+*?%S#@',
+  cp437:     ' ░▒▓█',
+  hatching:  ' .-:;/\\|+xX#@',
+  braille:   'BRAILLE',
+  cyborg:    " .`-~=+|t%0#█",
+  occult:    " .·✦☽○◇△✡☆❋☉◉✙❖◆▲●⛧",
+};
+
+const BRAILLE_RAMP = buildBrailleRamp();
+function buildBrailleRamp() {
+  const chars = [];
+  for (let i = 0; i < 256; i++) {
+    let bits = 0, v = i;
+    while (v) { bits += v & 1; v >>= 1; }
+    chars.push({ ch: String.fromCharCode(0x2800 + i), density: bits + (i / 256) });
+  }
+  chars.sort((a, b) => a.density - b.density);
+  return chars.map(c => c.ch).join('');
+}
+
+// ─── xterm 256-color palette ───
+const XTERM256 = buildXterm256();
+function buildXterm256() {
+  const p = [];
+  const ansi16 = [
+    [0,0,0],[128,0,0],[0,128,0],[128,128,0],[0,0,128],[128,0,128],[0,128,128],[192,192,192],
+    [128,128,128],[255,0,0],[0,255,0],[255,255,0],[0,0,255],[255,0,255],[0,255,255],[255,255,255],
+  ];
+  ansi16.forEach(c => p.push(c));
+  const vals = [0, 95, 135, 175, 215, 255];
+  for (let r = 0; r < 6; r++)
+    for (let g = 0; g < 6; g++)
+      for (let b = 0; b < 6; b++)
+        p.push([vals[r], vals[g], vals[b]]);
+  for (let i = 0; i < 24; i++) { const v = 8 + i * 10; p.push([v, v, v]); }
+  return p;
+}
+
+const CGA16 = [
+  [0,0,0],[0,0,170],[0,170,0],[0,170,170],
+  [170,0,0],[170,0,170],[170,85,0],[170,170,170],
+  [85,85,85],[85,85,255],[85,255,85],[85,255,255],
+  [255,85,85],[255,85,255],[255,255,85],[255,255,255],
+];
+const ANSI16 = XTERM256.slice(0, 16);
+const GRAY24 = XTERM256.slice(232, 256);
+
+// ─── Nearest-color lookup cache ───
+function buildNearestLookup(palette) {
+  const cache = new Uint16Array(4096);
+  for (let rq = 0; rq < 16; rq++)
+    for (let gq = 0; gq < 16; gq++)
+      for (let bq = 0; bq < 16; bq++) {
+        const r = rq * 17, g = gq * 17, b = bq * 17;
+        let bestDist = Infinity, bestIdx = 0;
+        for (let i = 0; i < palette.length; i++) {
+          const dr = r - palette[i][0], dg = g - palette[i][1], db = b - palette[i][2];
+          const d = dr*dr + dg*dg + db*db;
+          if (d < bestDist) { bestDist = d; bestIdx = i; }
+        }
+        cache[(rq << 8) | (gq << 4) | bq] = bestIdx;
+      }
+  return cache;
+}
+
+const paletteLookups = {
+  xterm256:  buildNearestLookup(XTERM256),
+  ansi16:    buildNearestLookup(ANSI16),
+  cga:       buildNearestLookup(CGA16),
+  grayscale: buildNearestLookup(GRAY24),
+};
+
+function getPaletteInfo(name) {
+  switch (name) {
+    case 'xterm256':  return { pal: XTERM256, cache: paletteLookups.xterm256 };
+    case 'ansi16':    return { pal: ANSI16,   cache: paletteLookups.ansi16 };
+    case 'cga':       return { pal: CGA16,    cache: paletteLookups.cga };
+    case 'grayscale': return { pal: GRAY24,   cache: paletteLookups.grayscale };
+    default: return null;
+  }
+}
+
+function nearestColor(r, g, b, cache) {
+  return cache[(r >> 4 << 8) | (g >> 4 << 4) | (b >> 4)];
+}
+
+// ─── DOM ───
+const video       = document.getElementById('video');
+const container   = document.getElementById('ascii-container');
+const asciiCanvas = document.getElementById('ascii-canvas');
+const asciiCtx    = asciiCanvas.getContext('2d');
+const probe       = document.getElementById('char-probe');
+const messageEl   = document.getElementById('message');
+const fpsEl       = document.getElementById('fps-display');
+const sizeEl      = document.getElementById('size-display');
+const debugEl     = document.getElementById('debug-display');
+const startBtn       = document.getElementById('start-btn');
+const stopBtn        = document.getElementById('stop-btn');
+const controlsWrapper = document.getElementById('controls-wrapper');
+const charsetEl    = document.getElementById('charset');
+const paletteEl    = document.getElementById('palette');
+const fontSizeEl   = document.getElementById('font-size');
+const contrastSlider = document.getElementById('contrast-slider');
+const brightSlider   = document.getElementById('bright-slider');
+
+const samplerCanvas = document.createElement('canvas');
+const samplerCtx = samplerCanvas.getContext('2d', { willReadFrequently: true });
+
+let stream = null, animId = null;
+let lastRenderTime = 0;
+let lastFpsTime = 0, fpsFrameCount = 0, fps = 0;
+let frameBuffer = null, frameBufferCols = 0, frameBufferRows = 0;
+
+function flushBuffer() {
+  frameBuffer = null;
+  frameBufferCols = 0;
+  frameBufferRows = 0;
+  asciiCtx.fillStyle = '#000';
+  asciiCtx.fillRect(0, 0, asciiCanvas.width, asciiCanvas.height);
+}
+
+// ─── Measure character cell (cached) ───
+function measureChar(fontSize) {
+  if (fontSize === cachedFontSize && cachedCharSize && !gridDirty) return cachedCharSize;
+  probe.style.fontSize = fontSize + 'px';
+  probe.style.lineHeight = fontSize + 'px';
+  const rect = probe.getBoundingClientRect();
+  cachedCharSize = { w: rect.width || (fontSize * 0.6), h: rect.height || fontSize };
+  cachedFontSize = fontSize;
+  gridDirty = false;
+  return cachedCharSize;
+}
+
+// ─── Compute grid (fill container, center-crop video) ───
+function calcGrid(videoWidth, videoHeight, fontSize) {
+  const charSize = measureChar(fontSize);
+  if (!cachedContainerRect) cachedContainerRect = container.getBoundingClientRect();
+  const availW = cachedContainerRect.width;
+  const availH = cachedContainerRect.height;
+
+  const cols = Math.max(10, Math.floor(availW / charSize.w));
+  const rows = Math.max(5, Math.floor(availH / charSize.h));
+
+  const gridAspect = (cols * charSize.w) / (rows * charSize.h);
+  const vidAspect  = videoWidth / videoHeight;
+
+  let sx, sy, sw, sh;
+  if (gridAspect > vidAspect) {
+    sw = videoWidth; sh = videoWidth / gridAspect;
+    sx = 0; sy = (videoHeight - sh) / 2;
+  } else {
+    sh = videoHeight; sw = videoHeight * gridAspect;
+    sx = (videoWidth - sw) / 2; sy = 0;
+  }
+
+  return { cols, rows, charSize, crop: { sx, sy, sw, sh } };
+}
+
+// ─── Camera ───
+async function startCamera() {
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: 'user', width: { ideal: 1280 }, height: { ideal: 720 } }
+    });
+    video.srcObject = stream;
+    await video.play();
+    startBtn.style.display = 'none';
+    stopBtn.style.display = '';
+    messageEl.style.display = 'none';
+    autoCollapseOnMobile();
+    animId = requestAnimationFrame(render);
+  } catch (err) {
+    messageEl.textContent = 'Camera access denied or unavailable.\n' + err.message;
+    messageEl.style.display = '';
+  }
+}
+
+function stopCamera() {
+  if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; }
+  if (animId) { cancelAnimationFrame(animId); animId = null; }
+  video.srcObject = null;
+  startBtn.style.display = '';
+  stopBtn.style.display = 'none';
+  messageEl.textContent = 'Camera stopped.';
+  messageEl.style.display = '';
+  fpsEl.textContent = '';
+  sizeEl.textContent = '';
+  debugEl.textContent = '—';
+}
+
+// ─── Render loop (canvas, throttled) ───
+function render(timestamp) {
+  if (!stream) return;
+  animId = requestAnimationFrame(render);
+
+  const elapsed = timestamp - lastRenderTime;
+  if (elapsed < FRAME_INTERVAL) return;
+  lastRenderTime = timestamp - (elapsed % FRAME_INTERVAL);
+
+  fpsFrameCount++;
+  if (timestamp - lastFpsTime >= 1000) {
+    fps = fpsFrameCount; fpsFrameCount = 0; lastFpsTime = timestamp;
+    fpsEl.textContent = fps + ' fps';
+  }
+
+  if (video.readyState < 2) return;
+
+  const charsetKey  = charsetEl.value;
+  const charset     = charsetKey === 'braille' ? BRAILLE_RAMP : CHARSETS[charsetKey];
+  const paletteName = paletteEl.value;
+  const fontSize    = parseInt(fontSizeEl.value);
+  const contrast    = parseFloat(contrastSlider.value);
+  const gamma       = parseFloat(brightSlider.value);
+
+  const { cols, rows, charSize, crop } = calcGrid(video.videoWidth, video.videoHeight, fontSize);
+
+  sizeEl.textContent = cols + '×' + rows;
+
+  // Sample video with center-crop — only resize when dimensions change
+  if (samplerCanvas.width !== cols || samplerCanvas.height !== rows) {
+    samplerCanvas.width = cols;
+    samplerCanvas.height = rows;
+  }
+  samplerCtx.save();
+  samplerCtx.translate(cols, 0);
+  samplerCtx.scale(-1, 1);
+  samplerCtx.drawImage(video, crop.sx, crop.sy, crop.sw, crop.sh, 0, 0, cols, rows);
+  samplerCtx.restore();
+
+  const imageData = samplerCtx.getImageData(0, 0, cols, rows);
+  const px = imageData.data;
+  const cLen = charset.length;
+
+  // Size output canvas
+  const canvasW = Math.round(cols * charSize.w);
+  const canvasH = Math.round(rows * charSize.h);
+
+  if (asciiCanvas.width !== canvasW || asciiCanvas.height !== canvasH) {
+    asciiCanvas.width = canvasW;
+    asciiCanvas.height = canvasH;
+  }
+
+  // font/textBaseline set after any resize (canvas resize resets drawing state)
+  asciiCtx.font = `${fontSize}px "Courier New", monospace`;
+  asciiCtx.textBaseline = 'top';
+  asciiCtx.fillStyle = '#000';
+
+  // Reset frame buffer if grid size changed
+  if (frameBufferCols !== cols || frameBufferRows !== rows) {
+    asciiCtx.fillRect(0, 0, canvasW, canvasH);
+    frameBuffer = new Array(cols * rows).fill(null);
+    frameBufferCols = cols;
+    frameBufferRows = rows;
+  }
+
+  const isMono = (paletteName === 'green' || paletteName === 'amber');
+  const isTrueColor = (paletteName === 'truecolor');
+  const palData = (!isMono && !isTrueColor) ? getPaletteInfo(paletteName) : null;
+  const monoColor = paletteName === 'green' ? '#00ff41'
+                  : paletteName === 'amber' ? '#ffb000' : null;
+
+  // Draw characters
+  let dirtyChar = 0, dirtyColor = 0;
+  for (let y = 0; y < rows; y++) {
+    const py = y * charSize.h;
+    for (let x = 0; x < cols; x++) {
+      const i = (y * cols + x) * 4;
+      const rRaw = px[i], gRaw = px[i + 1], blRaw = px[i + 2];
+
+      let bright = (0.299 * rRaw + 0.587 * gRaw + 0.114 * blRaw) / 255;
+
+      // Apply contrast around midpoint (0.5) — affects char selection
+      bright = Math.max(0, Math.min(1, (bright - 0.5) * contrast + 0.5));
+
+      // Quantized brightness for stable buffer comparison + char selection
+      const brightQ = Math.round(bright * 8) / 8;
+
+      // Char selection uses contrast-adjusted brightness
+      const ch = charset[Math.floor(bright * (cLen - 1))];
+
+      // Gamma lift applied only to color output, not char selection
+      const brightLifted = Math.pow(bright, gamma);
+
+      // 0xE0 quantized RGB for rendering — scaled by gamma lift
+      const scale = brightLifted / (bright || 1e-5);
+      let r = Math.min(255, rRaw * scale) & 0xE0;
+      let g = Math.min(255, gRaw * scale) & 0xE0;
+      let bl = Math.min(255, blRaw * scale) & 0xE0;
+
+      let color;
+      let colorKey; // coarse key used only for buffer comparison
+      if (isMono) {
+        color = monoColor;
+        colorKey = monoColor;
+      } else if (isTrueColor) {
+        color = `rgb(${r},${g},${bl})`;
+        colorKey = color;
+      } else {
+        // Render with 0xE0 palette color
+        const idx = nearestColor(r, g, bl, palData.cache);
+        const c = palData.pal[idx];
+        color = `rgb(${c[0]},${c[1]},${c[2]})`;
+        // Compare using ANSI16 index for stability
+        const ansi16Idx = nearestColor(r, g, bl, paletteLookups.ansi16);
+        colorKey = ansi16Idx;
+      }
+
+      const bufIdx = y * cols + x;
+      const prev = frameBuffer[bufIdx];
+      const chChanged = !prev || prev.brightQ !== brightQ;
+      const colorChanged = !prev || prev.colorKey !== colorKey;
+
+      if (!chChanged && !colorChanged) continue;
+      if (chChanged) dirtyChar++;
+      else dirtyColor++;
+      frameBuffer[bufIdx] = { brightQ, colorKey };
+
+      // Clear the cell before redrawing
+      asciiCtx.fillStyle = '#000';
+      asciiCtx.fillRect(x * charSize.w, py, charSize.w, charSize.h);
+
+      if (ch === ' ') continue;
+
+      asciiCtx.fillStyle = color;
+      asciiCtx.fillText(ch, x * charSize.w, py);
+    }
+  }
+  const total = cols * rows;
+  const pctChar  = ((dirtyChar  / total) * 100).toFixed(1);
+  const pctColor = ((dirtyColor / total) * 100).toFixed(1);
+  debugEl.textContent = pctChar + '% chr  ' + pctColor + '% col  ' + total + ' cells';
+}
+</script>
+
+
+</body></html>
