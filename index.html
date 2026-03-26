@@ -165,6 +165,74 @@
     .controls { gap: 0.5rem; padding: 6px 8px; }
     .ctrl-group { font-size: 0.65rem; }
   }
+
+  /* ── Debug grid ── */
+  #debug-grid {
+    display: none;
+    grid-template-columns: repeat(3, 1fr);
+    grid-template-rows: repeat(2, 1fr);
+    gap: 2px;
+    background: #111;
+    padding: 2px;
+    overflow: hidden;
+  }
+
+  #debug-grid.active {
+    display: grid;
+    flex: 1;
+  }
+
+  .debug-panel {
+    position: relative;
+    background: #000;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .debug-panel canvas {
+    image-rendering: pixelated;
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+  }
+
+  .debug-label {
+    position: absolute;
+    top: 6px;
+    left: 7px;
+    pointer-events: none;
+    font-family: 'Courier New', monospace;
+    background: rgba(0,0,0,0.82);
+    padding: 4px 7px;
+    border-radius: 2px;
+    line-height: 1.4;
+  }
+  .debug-label-title {
+    display: block;
+    font-size: 0.72rem;
+    font-weight: bold;
+    letter-spacing: 0.1em;
+    color: #0f0;
+    text-transform: uppercase;
+  }
+  .debug-label-desc {
+    display: block;
+    font-size: 0.64rem;
+    letter-spacing: 0.02em;
+    color: #5a5;
+    white-space: normal;
+    max-width: 22ch;
+    line-height: 1.35;
+  }
+
+  .controls button.debug-btn {
+    background: #111;
+    color: #0f0;
+    border: 1px solid #0f0;
+  }
+  .controls button.debug-btn:hover { background: #0f01; }
 </style>
 </head>
 <body>
@@ -217,8 +285,9 @@
     </div>
     <button id="start-btn" aria-label="Start camera" onclick="startCamera()">▶ Start</button>
     <button id="stop-btn" class="stop" aria-label="Stop camera" onclick="stopCamera()" style="display:none;">■ Stop</button>
+    <button id="debug-btn" class="debug-btn" aria-label="Toggle debug view" onclick="toggleDebug()">DEBUG</button>
     <div class="ctrl-group">
-      <span id="debug-display" style="color:#0f0; font-size:0.75rem; white-space:nowrap;">—</span>
+      <span id="debug-display" style="color:#0f0; font-size:0.75rem; white-space:nowrap; display:inline-block; min-width:16ch; font-variant-numeric:tabular-nums;">—</span>
     </div>
   </div>
 </div>
@@ -227,6 +296,33 @@
   <canvas id="ascii-canvas"></canvas>
   <span id="char-probe">M</span>
   <div id="message">Press "▶ Start" to begin</div>
+</div>
+
+<div id="debug-grid">
+  <div class="debug-panel" id="panel-raw">
+    <canvas id="dbg-raw"></canvas>
+    <span class="debug-label"><span class="debug-label-title">RAW</span><span class="debug-label-desc">source pixels before any processing</span></span>
+  </div>
+  <div class="debug-panel" id="panel-luma">
+    <canvas id="dbg-luma"></canvas>
+    <span class="debug-label"><span class="debug-label-title">LUMA</span><span class="debug-label-desc">brightness extracted per cell — drives character density</span></span>
+  </div>
+  <div class="debug-panel" id="panel-contrast">
+    <canvas id="dbg-contrast"></canvas>
+    <span class="debug-label"><span class="debug-label-title">CONTRAST</span><span class="debug-label-desc">curve applied — sharpens light/dark separation</span></span>
+  </div>
+  <div class="debug-panel" id="panel-char">
+    <canvas id="dbg-char"></canvas>
+    <span class="debug-label"><span class="debug-label-title">CHAR</span><span class="debug-label-desc">glyph chosen — density mapped to visual weight</span></span>
+  </div>
+  <div class="debug-panel" id="panel-colorlift">
+    <canvas id="dbg-colorlift"></canvas>
+    <span class="debug-label"><span class="debug-label-title">COLOR LIFT</span><span class="debug-label-desc">gamma compensates for sparse glyph coverage — recovers perceived brightness</span></span>
+  </div>
+  <div class="debug-panel" id="panel-palette">
+    <canvas id="dbg-palette"></canvas>
+    <span class="debug-label"><span class="debug-label-title">PALETTE SNAP</span><span class="debug-label-desc">color forced into a fixed palette — image recast in historic terminal color space</span></span>
+  </div>
 </div>
 
 <div id="fps-display"></div>
@@ -238,12 +334,38 @@
 // ─── Config ───
 let FRAME_INTERVAL = 1000 / 18;
 
+// ─── Debug mode ───
+let debugMode = false;
+
+function toggleDebug() {
+  debugMode = !debugMode;
+  const btn = document.getElementById('debug-btn');
+  const asciiContainer = document.getElementById('ascii-container');
+  const debugGrid = document.getElementById('debug-grid');
+  if (debugMode) {
+    btn.textContent = 'VIEW';
+    asciiContainer.style.display = 'none';
+    debugGrid.classList.add('active');
+    sizeDebugCanvases();
+  } else {
+    btn.textContent = 'DEBUG';
+    asciiContainer.style.display = '';
+    debugGrid.classList.remove('active');
+    flushBuffer();
+  }
+}
+
+function sizeDebugCanvases() {
+  // no-op: debug canvases are sized to match the main ASCII canvas output
+  // and scaled down to fit their panel via CSS object-fit: contain
+}
+
 // ─── Grid cache ───
 let cachedCharSize = null;
 let cachedFontSize = -1;
 let cachedContainerRect = null;
 let gridDirty = true;
-window.addEventListener('resize', () => { gridDirty = true; cachedContainerRect = null; flushBuffer(); });
+window.addEventListener('resize', () => { gridDirty = true; cachedContainerRect = null; flushBuffer(); if (debugMode) sizeDebugCanvases(); });
 
 // ─── Controls drawer (mobile) ───
 function toggleControls() {
@@ -365,6 +487,20 @@ const paletteEl    = document.getElementById('palette');
 const fontSizeEl   = document.getElementById('font-size');
 const contrastSlider = document.getElementById('contrast-slider');
 const brightSlider   = document.getElementById('bright-slider');
+
+// ─── Debug canvases ───
+const dbgRaw       = document.getElementById('dbg-raw');
+const dbgLuma      = document.getElementById('dbg-luma');
+const dbgContrast  = document.getElementById('dbg-contrast');
+const dbgChar      = document.getElementById('dbg-char');
+const dbgColorlift = document.getElementById('dbg-colorlift');
+const dbgPalette   = document.getElementById('dbg-palette');
+const dbgCtxRaw       = dbgRaw.getContext('2d');
+const dbgCtxLuma      = dbgLuma.getContext('2d');
+const dbgCtxContrast  = dbgContrast.getContext('2d');
+const dbgCtxChar      = dbgChar.getContext('2d');
+const dbgCtxColorlift = dbgColorlift.getContext('2d');
+const dbgCtxPalette   = dbgPalette.getContext('2d');
 
 const samplerCanvas = document.createElement('canvas');
 const samplerCtx = samplerCanvas.getContext('2d', { willReadFrequently: true });
@@ -592,6 +728,105 @@ function render(timestamp) {
   const pctChar  = ((dirtyChar  / total) * 100).toFixed(1);
   const pctColor = ((dirtyColor / total) * 100).toFixed(1);
   debugEl.textContent = pctChar + '% chr  ' + pctColor + '% col  ' + total + ' cells';
+
+  // ─── Debug panels ───
+  if (debugMode) {
+    renderDebugPanels(px, cols, rows, charset, cLen, contrast, gamma, paletteName, isMono, isTrueColor, palData, monoColor);
+  }
+}
+
+function renderDebugPanels(px, cols, rows, charset, cLen, contrast, gamma, paletteName, isMono, isTrueColor, palData, monoColor) {
+  // Size all debug canvases to match the full ASCII output canvas dimensions,
+  // then CSS scales them down to fit their panel (object-fit: contain).
+  const fullW = asciiCanvas.width;
+  const fullH = asciiCanvas.height;
+
+  [dbgRaw, dbgLuma, dbgContrast, dbgChar, dbgColorlift, dbgPalette].forEach(c => {
+    if (c.width !== fullW || c.height !== fullH) {
+      c.width  = fullW;
+      c.height = fullH;
+    }
+  });
+
+  const fontSize  = parseInt(fontSizeEl.value);
+  const charSize  = cachedCharSize || measureChar(fontSize);
+  const cellW     = charSize.w;
+  const cellH     = charSize.h;
+
+  // Clear cell-based panels
+  [dbgCtxLuma, dbgCtxContrast, dbgCtxChar, dbgCtxColorlift, dbgCtxPalette].forEach(ctx => {
+    ctx.fillStyle = '#000';
+    ctx.fillRect(0, 0, fullW, fullH);
+  });
+
+  // Panel 1 — RAW: sampler canvas scaled to full output dimensions
+  dbgCtxRaw.drawImage(samplerCanvas, 0, 0, fullW, fullH);
+
+  // Panels 4 + 6 — CHAR and PALETTE SNAP: draw actual characters
+  const fontDecl = fontSize + 'px "Courier New", monospace';
+  dbgCtxChar.font    = fontDecl;
+  dbgCtxChar.textBaseline = 'top';
+  dbgCtxPalette.font = fontDecl;
+  dbgCtxPalette.textBaseline = 'top';
+
+  for (let y = 0; y < rows; y++) {
+    const py = y * cellH;
+    for (let x = 0; x < cols; x++) {
+      const i    = (y * cols + x) * 4;
+      const rRaw = px[i], gRaw = px[i+1], blRaw = px[i+2];
+      const px2  = x * cellW;
+
+      // Stage 2: LUMA
+      const luma  = (0.299 * rRaw + 0.587 * gRaw + 0.114 * blRaw) / 255;
+      const lumaV = Math.round(luma * 255);
+      dbgCtxLuma.fillStyle = 'rgb(' + lumaV + ',' + lumaV + ',' + lumaV + ')';
+      dbgCtxLuma.fillRect(px2, py, cellW, cellH);
+
+      // Stage 3: CONTRAST
+      const bright = Math.max(0, Math.min(1, (luma - 0.5) * contrast + 0.5));
+      const contV  = Math.round(bright * 255);
+      dbgCtxContrast.fillStyle = 'rgb(' + contV + ',' + contV + ',' + contV + ')';
+      dbgCtxContrast.fillRect(px2, py, cellW, cellH);
+
+      // Stage 4: CHAR — white glyph on black, no color
+      const ch = charset[Math.floor(bright * (cLen - 1))];
+      if (ch !== ' ') {
+        dbgCtxChar.fillStyle = '#fff';
+        dbgCtxChar.fillText(ch, px2, py);
+      }
+
+      // Stage 5: COLOR LIFT — filled rect in lifted RGB, no glyph
+      const brightLifted = Math.pow(bright, gamma);
+      const scale = brightLifted / (bright || 1e-5);
+      const rL = Math.round(Math.min(255, rRaw * scale));
+      const gL = Math.round(Math.min(255, gRaw * scale));
+      const bL = Math.round(Math.min(255, blRaw * scale));
+      dbgCtxColorlift.fillStyle = 'rgb(' + rL + ',' + gL + ',' + bL + ')';
+      dbgCtxColorlift.fillRect(px2, py, cellW, cellH);
+
+      // Stage 6: PALETTE SNAP — glyph drawn in final quantized color
+      const r0 = Math.min(255, rRaw * scale) & 0xE0;
+      const g0 = Math.min(255, gRaw * scale) & 0xE0;
+      const b0 = Math.min(255, blRaw * scale) & 0xE0;
+      let finalColor;
+      if (isMono) {
+        finalColor = monoColor;
+      } else if (isTrueColor) {
+        finalColor = 'rgb(' + r0 + ',' + g0 + ',' + b0 + ')';
+      } else {
+        const idx = nearestColor(r0, g0, b0, palData.cache);
+        const c   = palData.pal[idx];
+        finalColor = 'rgb(' + c[0] + ',' + c[1] + ',' + c[2] + ')';
+      }
+      // Clear cell then draw glyph in final color
+      dbgCtxPalette.fillStyle = '#000';
+      dbgCtxPalette.fillRect(px2, py, cellW, cellH);
+      if (ch !== ' ') {
+        dbgCtxPalette.fillStyle = finalColor;
+        dbgCtxPalette.fillText(ch, px2, py);
+      }
+    }
+  }
 }
 </script>
 
