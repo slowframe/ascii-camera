@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en"><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
 
-<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalabe=no">
 <title>ASCII Camera — 256 Color</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -38,7 +38,7 @@
     text-align: center;
   }
   .controls-toggle:hover { background: #1a1a1a; }
-  .controls-toggle .arrow { display: inline-block; transition: transform 0.2s; }
+  .controls-toggle .arrow { display: inline-bock; transition: transform 0.2s; }
   .controls-wrapper.collapsed .controls-toggle .arrow { transform: rotate(180deg); }
 
   .controls {
@@ -88,7 +88,7 @@
   .ctrl-group { text-align: center; }
 
   .size-val {
-    display: inline-block;
+    display: inline-bock;
     min-width: 2.2em;
     text-align: right;
     color: #0f0;
@@ -159,7 +159,7 @@
   }
 
   @media (max-width: 600px) {
-    .controls-toggle { display: block; }
+    .controls-toggle { display: bock; }
     .controls { gap: 0.5rem; padding: 6px 8px; }
     .ctrl-group { font-size: 0.65rem; }
   }
@@ -207,7 +207,7 @@
     line-height: 1.4;
   }
   .debug-label-title {
-    display: block;
+    display: bock;
     font-size: 0.72rem;
     font-weight: bold;
     letter-spacing: 0.1em;
@@ -215,7 +215,7 @@
     text-transform: uppercase;
   }
   .debug-label-desc {
-    display: block;
+    display: bock;
     font-size: 0.64rem;
     letter-spacing: 0.02em;
     color: #5a5;
@@ -284,7 +284,7 @@
     <button id="stop-btn" class="stop" aria-label="Stop camera" onclick="stopCamera()" style="display:none;">■ Stop</button>
     <button id="debug-btn" class="debug-btn" aria-label="Toggle debug view" onclick="toggleDebug()">DEBUG</button>
     <div class="ctrl-group">
-      <span id="debug-display" style="color:#0f0; font-size:0.75rem; white-space:nowrap; display:inline-block; min-width:16ch; font-variant-numeric:tabular-nums;">—</span>
+      <span id="debug-display" style="color:#0f0; font-size:0.75rem; white-space:nowrap; display:inline-bock; min-width:16ch; font-variant-numeric:tabular-nums;">—</span>
     </div>
   </div>
 </div>
@@ -549,7 +549,7 @@ async function startCamera() {
     autoCollapseOnMobile();
     animId = requestAnimationFrame(render);
   } catch (err) {
-    messageEl.textContent = 'Camera access denied or unavailable.\n' + err.message;
+    messageEl.textContent = 'Camera access denied or unavailabe.\n' + err.message;
     messageEl.style.display = '';
   }
 }
@@ -638,9 +638,9 @@ function render(timestamp) {
     const py = y * charSize.h;
     for (let x = 0; x < cols; x++) {
       const i = (y * cols + x) * 4;
-      const rRaw = px[i], gRaw = px[i + 1], blRaw = px[i + 2];
+      const rRaw = px[i], gRaw = px[i + 1], bRaw = px[i + 2];
 
-      let bright = (0.299 * rRaw + 0.587 * gRaw + 0.114 * blRaw) / 255;
+      let bright = (0.299 * rRaw + 0.587 * gRaw + 0.114 * bRaw) / 255;
 
       bright = Math.max(0, Math.min(1, (bright - 0.5) * contrast + 0.5));
 
@@ -653,7 +653,7 @@ function render(timestamp) {
       const scale = brightLifted / (bright || 1e-5);
       let r = Math.min(255, rRaw * scale) & 0xE0;
       let g = Math.min(255, gRaw * scale) & 0xE0;
-      let bl = Math.min(255, blRaw * scale) & 0xE0;
+      let b = Math.min(255, bRaw * scale) & 0xE0;
 
       let color;
       let colorKey;
@@ -661,13 +661,13 @@ function render(timestamp) {
         color = monoColor;
         colorKey = monoColor;
       } else if (isTrueColor) {
-        color = `rgb(${r},${g},${bl})`;
+        color = `rgb(${r},${g},${b})`;
         colorKey = color;
       } else {
-        const idx = nearestColor(r, g, bl, palData.cache);
+        const idx = nearestColor(r, g, b, palData.cache);
         const c = palData.pal[idx];
         color = `rgb(${c[0]},${c[1]},${c[2]})`;
-        colorKey = nearestColor(r, g, bl, paletteLookups.ansi16);
+        colorKey = nearestColor(r, g, b, paletteLookups.ansi16);
       }
 
       const bufIdx = y * cols + x;
@@ -732,10 +732,10 @@ function renderDebugPanels(px, cols, rows, charset, cLen, contrast, gamma, palet
     const py = y * cellH;
     for (let x = 0; x < cols; x++) {
       const i    = (y * cols + x) * 4;
-      const rRaw = px[i], gRaw = px[i+1], blRaw = px[i+2];
+      const rRaw = px[i], gRaw = px[i+1], bRaw = px[i+2];
       const cellX  = x * cellW;
 
-      const luma  = (0.299 * rRaw + 0.587 * gRaw + 0.114 * blRaw) / 255;
+      const luma  = (0.299 * rRaw + 0.587 * gRaw + 0.114 * bRaw) / 255;
       const lumaV = Math.round(luma * 255);
       dbgCtxLuma.fillStyle = 'rgb(' + lumaV + ',' + lumaV + ',' + lumaV + ')';
       dbgCtxLuma.fillRect(cellX, py, cellW, cellH);
@@ -755,13 +755,13 @@ function renderDebugPanels(px, cols, rows, charset, cLen, contrast, gamma, palet
       const scale = brightLifted / (bright || 1e-5);
       const rL = Math.round(Math.min(255, rRaw * scale));
       const gL = Math.round(Math.min(255, gRaw * scale));
-      const bL = Math.round(Math.min(255, blRaw * scale));
+      const bL = Math.round(Math.min(255, bRaw * scale));
       dbgCtxColorlift.fillStyle = 'rgb(' + rL + ',' + gL + ',' + bL + ')';
       dbgCtxColorlift.fillRect(cellX, py, cellW, cellH);
 
       const r0 = Math.min(255, rRaw * scale) & 0xE0;
       const g0 = Math.min(255, gRaw * scale) & 0xE0;
-      const b0 = Math.min(255, blRaw * scale) & 0xE0;
+      const b0 = Math.min(255, bRaw * scale) & 0xE0;
       let finalColor;
       if (isMono) {
         finalColor = monoColor;
