@@ -335,15 +335,14 @@ let debugMode = false;
 function toggleDebug() {
   debugMode = !debugMode;
   const btn = document.getElementById('debug-btn');
-  const asciiContainer = document.getElementById('ascii-container');
   const debugGrid = document.getElementById('debug-grid');
   if (debugMode) {
     btn.textContent = 'VIEW';
-    asciiContainer.style.display = 'none';
+    container.style.display = 'none';
     debugGrid.classList.add('active');
   } else {
     btn.textContent = 'DEBUG';
-    asciiContainer.style.display = '';
+    container.style.display = '';
     debugGrid.classList.remove('active');
     flushBuffer();
   }
