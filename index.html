@@ -341,7 +341,6 @@ function toggleDebug() {
     btn.textContent = 'VIEW';
     asciiContainer.style.display = 'none';
     debugGrid.classList.add('active');
-    sizeDebugCanvases();
   } else {
     btn.textContent = 'DEBUG';
     asciiContainer.style.display = '';
@@ -350,15 +349,12 @@ function toggleDebug() {
   }
 }
 
-function sizeDebugCanvases() {
-
-}
 
 let cachedCharSize = null;
 let cachedFontSize = -1;
 let cachedContainerRect = null;
 let gridDirty = true;
-window.addEventListener('resize', () => { gridDirty = true; cachedContainerRect = null; flushBuffer(); if (debugMode) sizeDebugCanvases(); });
+window.addEventListener('resize', () => { gridDirty = true; cachedContainerRect = null; flushBuffer(); });
 
 function toggleControls() {
   controlsWrapper.classList.toggle('collapsed');
