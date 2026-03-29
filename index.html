@@ -490,7 +490,7 @@ const samplerCtx = samplerCanvas.getContext('2d', { willReadFrequently: true });
 
 let stream = null, animId = null;
 let lastRenderTime = 0;
-let lastFpsTime = 0, fpsFrameCount = 0, fps = 0;
+let lastFpsTime = 0, fpsFrameCount = 0;
 let frameBuffer = null, frameBufferCols = 0, frameBufferRows = 0;
 
 function flushBuffer() {
@@ -577,8 +577,8 @@ function render(timestamp) {
 
   fpsFrameCount++;
   if (timestamp - lastFpsTime >= 1000) {
-    fps = fpsFrameCount; fpsFrameCount = 0; lastFpsTime = timestamp;
-    fpsEl.textContent = fps + ' fps';
+    fpsEl.textContent = fpsFrameCount + ' fps';
+    fpsFrameCount = 0; lastFpsTime = timestamp;
   }
 
   if (video.readyState < 2) return;
