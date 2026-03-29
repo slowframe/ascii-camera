@@ -733,22 +733,22 @@ function renderDebugPanels(px, cols, rows, charset, cLen, contrast, gamma, palet
     for (let x = 0; x < cols; x++) {
       const i    = (y * cols + x) * 4;
       const rRaw = px[i], gRaw = px[i+1], blRaw = px[i+2];
-      const px2  = x * cellW;
+      const cellX  = x * cellW;
 
       const luma  = (0.299 * rRaw + 0.587 * gRaw + 0.114 * blRaw) / 255;
       const lumaV = Math.round(luma * 255);
       dbgCtxLuma.fillStyle = 'rgb(' + lumaV + ',' + lumaV + ',' + lumaV + ')';
-      dbgCtxLuma.fillRect(px2, py, cellW, cellH);
+      dbgCtxLuma.fillRect(cellX, py, cellW, cellH);
 
       const bright = Math.max(0, Math.min(1, (luma - 0.5) * contrast + 0.5));
       const contV  = Math.round(bright * 255);
       dbgCtxContrast.fillStyle = 'rgb(' + contV + ',' + contV + ',' + contV + ')';
-      dbgCtxContrast.fillRect(px2, py, cellW, cellH);
+      dbgCtxContrast.fillRect(cellX, py, cellW, cellH);
 
       const ch = charset[Math.floor(bright * (cLen - 1))];
       if (ch !== ' ') {
         dbgCtxChar.fillStyle = '#fff';
-        dbgCtxChar.fillText(ch, px2, py);
+        dbgCtxChar.fillText(ch, cellX, py);
       }
 
       const brightLifted = Math.pow(bright, gamma);
@@ -757,7 +757,7 @@ function renderDebugPanels(px, cols, rows, charset, cLen, contrast, gamma, palet
       const gL = Math.round(Math.min(255, gRaw * scale));
       const bL = Math.round(Math.min(255, blRaw * scale));
       dbgCtxColorlift.fillStyle = 'rgb(' + rL + ',' + gL + ',' + bL + ')';
-      dbgCtxColorlift.fillRect(px2, py, cellW, cellH);
+      dbgCtxColorlift.fillRect(cellX, py, cellW, cellH);
 
       const r0 = Math.min(255, rRaw * scale) & 0xE0;
       const g0 = Math.min(255, gRaw * scale) & 0xE0;
@@ -773,10 +773,10 @@ function renderDebugPanels(px, cols, rows, charset, cLen, contrast, gamma, palet
         finalColor = 'rgb(' + c[0] + ',' + c[1] + ',' + c[2] + ')';
       }
       dbgCtxPalette.fillStyle = '#000';
-      dbgCtxPalette.fillRect(px2, py, cellW, cellH);
+      dbgCtxPalette.fillRect(cellX, py, cellW, cellH);
       if (ch !== ' ') {
         dbgCtxPalette.fillStyle = finalColor;
-        dbgCtxPalette.fillText(ch, px2, py);
+        dbgCtxPalette.fillText(ch, cellX, py);
       }
     }
   }
