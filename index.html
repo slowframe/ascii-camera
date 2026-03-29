@@ -18,7 +18,6 @@
     flex-direction: column;
   }
 
-  /* ── Controls drawer ── */
   .controls-wrapper {
     position: relative;
     z-index: 10;
@@ -111,7 +110,6 @@
   .controls button.stop { background: #f33; color: #fff; }
   .controls button.stop:hover { background: #f66; }
 
-  /* ── ASCII output fills remaining space ── */
   #ascii-container {
     flex: 1;
     overflow: hidden;
@@ -166,7 +164,6 @@
     .ctrl-group { font-size: 0.65rem; }
   }
 
-  /* ── Debug grid ── */
   #debug-grid {
     display: none;
     grid-template-columns: repeat(3, 1fr);
@@ -331,10 +328,8 @@
 <video id="video" autoplay="" playsinline="" muted=""></video>
 
 <script>
-// ─── Config ───
 let FRAME_INTERVAL = 1000 / 18;
 
-// ─── Debug mode ───
 let debugMode = false;
 
 function toggleDebug() {
@@ -356,18 +351,15 @@ function toggleDebug() {
 }
 
 function sizeDebugCanvases() {
-  // no-op: debug canvases are sized to match the main ASCII canvas output
-  // and scaled down to fit their panel via CSS object-fit: contain
+
 }
 
-// ─── Grid cache ───
 let cachedCharSize = null;
 let cachedFontSize = -1;
 let cachedContainerRect = null;
 let gridDirty = true;
 window.addEventListener('resize', () => { gridDirty = true; cachedContainerRect = null; flushBuffer(); if (debugMode) sizeDebugCanvases(); });
 
-// ─── Controls drawer (mobile) ───
 function toggleControls() {
   controlsWrapper.classList.toggle('collapsed');
   cachedContainerRect = null;
@@ -379,7 +371,6 @@ function autoCollapseOnMobile() {
   }
 }
 
-// ─── Character sets ───
 const CHARSETS = {
   bourke70:  " .'`^\",:;Il!i><~+_-?][}{1)(|\\/tfjrxnuvczXYUJCLQ0OZmwqpdbkhao*#MW&8%B@$",
   bourke10:  ' .:-=+*#%@',
@@ -403,7 +394,6 @@ function buildBrailleRamp() {
   return chars.map(c => c.ch).join('');
 }
 
-// ─── xterm 256-color palette ───
 const XTERM256 = buildXterm256();
 function buildXterm256() {
   const p = [];
@@ -430,7 +420,6 @@ const CGA16 = [
 const ANSI16 = XTERM256.slice(0, 16);
 const GRAY24 = XTERM256.slice(232, 256);
 
-// ─── Nearest-color lookup cache ───
 function buildNearestLookup(palette) {
   const cache = new Uint16Array(4096);
   for (let rq = 0; rq < 16; rq++)
@@ -469,7 +458,6 @@ function nearestColor(r, g, b, cache) {
   return cache[(r >> 4 << 8) | (g >> 4 << 4) | (b >> 4)];
 }
 
-// ─── DOM ───
 const video       = document.getElementById('video');
 const container   = document.getElementById('ascii-container');
 const asciiCanvas = document.getElementById('ascii-canvas');
@@ -488,7 +476,6 @@ const fontSizeEl   = document.getElementById('font-size');
 const contrastSlider = document.getElementById('contrast-slider');
 const brightSlider   = document.getElementById('bright-slider');
 
-// ─── Debug canvases ───
 const dbgRaw       = document.getElementById('dbg-raw');
 const dbgLuma      = document.getElementById('dbg-luma');
 const dbgContrast  = document.getElementById('dbg-contrast');
@@ -518,7 +505,6 @@ function flushBuffer() {
   asciiCtx.fillRect(0, 0, asciiCanvas.width, asciiCanvas.height);
 }
 
-// ─── Measure character cell (cached) ───
 function measureChar(fontSize) {
   if (fontSize === cachedFontSize && cachedCharSize && !gridDirty) return cachedCharSize;
   probe.style.fontSize = fontSize + 'px';
@@ -530,7 +516,6 @@ function measureChar(fontSize) {
   return cachedCharSize;
 }
 
-// ─── Compute grid (fill container, center-crop video) ───
 function calcGrid(videoWidth, videoHeight, fontSize) {
   const charSize = measureChar(fontSize);
   if (!cachedContainerRect) cachedContainerRect = container.getBoundingClientRect();
@@ -555,7 +540,6 @@ function calcGrid(videoWidth, videoHeight, fontSize) {
   return { cols, rows, charSize, crop: { sx, sy, sw, sh } };
 }
 
-// ─── Camera ───
 async function startCamera() {
   try {
     stream = await navigator.mediaDevices.getUserMedia({
@@ -587,7 +571,6 @@ function stopCamera() {
   debugEl.textContent = '—';
 }
 
-// ─── Render loop (canvas, throttled) ───
 function render(timestamp) {
   if (!stream) return;
   animId = requestAnimationFrame(render);
@@ -615,7 +598,6 @@ function render(timestamp) {
 
   sizeEl.textContent = cols + '×' + rows;
 
-  // Sample video with center-crop — only resize when dimensions change
   if (samplerCanvas.width !== cols || samplerCanvas.height !== rows) {
     samplerCanvas.width = cols;
     samplerCanvas.height = rows;
@@ -630,7 +612,6 @@ function render(timestamp) {
   const px = imageData.data;
   const cLen = charset.length;
 
-  // Size output canvas
   const canvasW = Math.round(cols * charSize.w);
   const canvasH = Math.round(rows * charSize.h);
 
@@ -639,12 +620,10 @@ function render(timestamp) {
     asciiCanvas.height = canvasH;
   }
 
-  // font/textBaseline set after any resize (canvas resize resets drawing state)
   asciiCtx.font = `${fontSize}px "Courier New", monospace`;
   asciiCtx.textBaseline = 'top';
   asciiCtx.fillStyle = '#000';
 
-  // Reset frame buffer if grid size changed
   if (frameBufferCols !== cols || frameBufferRows !== rows) {
     asciiCtx.fillRect(0, 0, canvasW, canvasH);
     frameBuffer = new Array(cols * rows).fill(null);
@@ -658,7 +637,6 @@ function render(timestamp) {
   const monoColor = paletteName === 'green' ? '#00ff41'
                   : paletteName === 'amber' ? '#ffb000' : null;
 
-  // Draw characters
   let dirtyChar = 0, dirtyColor = 0;
   for (let y = 0; y < rows; y++) {
     const py = y * charSize.h;
@@ -668,26 +646,21 @@ function render(timestamp) {
 
       let bright = (0.299 * rRaw + 0.587 * gRaw + 0.114 * blRaw) / 255;
 
-      // Apply contrast around midpoint (0.5) — affects char selection
       bright = Math.max(0, Math.min(1, (bright - 0.5) * contrast + 0.5));
 
-      // Quantized brightness for stable buffer comparison + char selection
       const brightQ = Math.round(bright * 8) / 8;
 
-      // Char selection uses contrast-adjusted brightness
       const ch = charset[Math.floor(bright * (cLen - 1))];
 
-      // Gamma lift applied only to color output, not char selection
       const brightLifted = Math.pow(bright, gamma);
 
-      // 0xE0 quantized RGB for rendering — scaled by gamma lift
       const scale = brightLifted / (bright || 1e-5);
       let r = Math.min(255, rRaw * scale) & 0xE0;
       let g = Math.min(255, gRaw * scale) & 0xE0;
       let bl = Math.min(255, blRaw * scale) & 0xE0;
 
       let color;
-      let colorKey; // coarse key used only for buffer comparison
+      let colorKey;
       if (isMono) {
         color = monoColor;
         colorKey = monoColor;
@@ -695,13 +668,10 @@ function render(timestamp) {
         color = `rgb(${r},${g},${bl})`;
         colorKey = color;
       } else {
-        // Render with 0xE0 palette color
         const idx = nearestColor(r, g, bl, palData.cache);
         const c = palData.pal[idx];
         color = `rgb(${c[0]},${c[1]},${c[2]})`;
-        // Compare using ANSI16 index for stability
-        const ansi16Idx = nearestColor(r, g, bl, paletteLookups.ansi16);
-        colorKey = ansi16Idx;
+        colorKey = nearestColor(r, g, bl, paletteLookups.ansi16);
       }
 
       const bufIdx = y * cols + x;
@@ -714,7 +684,6 @@ function render(timestamp) {
       else dirtyColor++;
       frameBuffer[bufIdx] = { brightQ, colorKey };
 
-      // Clear the cell before redrawing
       asciiCtx.fillStyle = '#000';
       asciiCtx.fillRect(x * charSize.w, py, charSize.w, charSize.h);
 
@@ -729,15 +698,12 @@ function render(timestamp) {
   const pctColor = ((dirtyColor / total) * 100).toFixed(1);
   debugEl.textContent = pctChar + '% chr  ' + pctColor + '% col  ' + total + ' cells';
 
-  // ─── Debug panels ───
   if (debugMode) {
     renderDebugPanels(px, cols, rows, charset, cLen, contrast, gamma, paletteName, isMono, isTrueColor, palData, monoColor);
   }
 }
 
 function renderDebugPanels(px, cols, rows, charset, cLen, contrast, gamma, paletteName, isMono, isTrueColor, palData, monoColor) {
-  // Size all debug canvases to match the full ASCII output canvas dimensions,
-  // then CSS scales them down to fit their panel (object-fit: contain).
   const fullW = asciiCanvas.width;
   const fullH = asciiCanvas.height;
 
@@ -753,16 +719,13 @@ function renderDebugPanels(px, cols, rows, charset, cLen, contrast, gamma, palet
   const cellW     = charSize.w;
   const cellH     = charSize.h;
 
-  // Clear cell-based panels
   [dbgCtxLuma, dbgCtxContrast, dbgCtxChar, dbgCtxColorlift, dbgCtxPalette].forEach(ctx => {
     ctx.fillStyle = '#000';
     ctx.fillRect(0, 0, fullW, fullH);
   });
 
-  // Panel 1 — RAW: sampler canvas scaled to full output dimensions
   dbgCtxRaw.drawImage(samplerCanvas, 0, 0, fullW, fullH);
 
-  // Panels 4 + 6 — CHAR and PALETTE SNAP: draw actual characters
   const fontDecl = fontSize + 'px "Courier New", monospace';
   dbgCtxChar.font    = fontDecl;
   dbgCtxChar.textBaseline = 'top';
@@ -776,26 +739,22 @@ function renderDebugPanels(px, cols, rows, charset, cLen, contrast, gamma, palet
       const rRaw = px[i], gRaw = px[i+1], blRaw = px[i+2];
       const px2  = x * cellW;
 
-      // Stage 2: LUMA
       const luma  = (0.299 * rRaw + 0.587 * gRaw + 0.114 * blRaw) / 255;
       const lumaV = Math.round(luma * 255);
       dbgCtxLuma.fillStyle = 'rgb(' + lumaV + ',' + lumaV + ',' + lumaV + ')';
       dbgCtxLuma.fillRect(px2, py, cellW, cellH);
 
-      // Stage 3: CONTRAST
       const bright = Math.max(0, Math.min(1, (luma - 0.5) * contrast + 0.5));
       const contV  = Math.round(bright * 255);
       dbgCtxContrast.fillStyle = 'rgb(' + contV + ',' + contV + ',' + contV + ')';
       dbgCtxContrast.fillRect(px2, py, cellW, cellH);
 
-      // Stage 4: CHAR — white glyph on black, no color
       const ch = charset[Math.floor(bright * (cLen - 1))];
       if (ch !== ' ') {
         dbgCtxChar.fillStyle = '#fff';
         dbgCtxChar.fillText(ch, px2, py);
       }
 
-      // Stage 5: COLOR LIFT — filled rect in lifted RGB, no glyph
       const brightLifted = Math.pow(bright, gamma);
       const scale = brightLifted / (bright || 1e-5);
       const rL = Math.round(Math.min(255, rRaw * scale));
@@ -804,7 +763,6 @@ function renderDebugPanels(px, cols, rows, charset, cLen, contrast, gamma, palet
       dbgCtxColorlift.fillStyle = 'rgb(' + rL + ',' + gL + ',' + bL + ')';
       dbgCtxColorlift.fillRect(px2, py, cellW, cellH);
 
-      // Stage 6: PALETTE SNAP — glyph drawn in final quantized color
       const r0 = Math.min(255, rRaw * scale) & 0xE0;
       const g0 = Math.min(255, gRaw * scale) & 0xE0;
       const b0 = Math.min(255, blRaw * scale) & 0xE0;
@@ -818,7 +776,6 @@ function renderDebugPanels(px, cols, rows, charset, cLen, contrast, gamma, palet
         const c   = palData.pal[idx];
         finalColor = 'rgb(' + c[0] + ',' + c[1] + ',' + c[2] + ')';
       }
-      // Clear cell then draw glyph in final color
       dbgCtxPalette.fillStyle = '#000';
       dbgCtxPalette.fillRect(px2, py, cellW, cellH);
       if (ch !== ' ') {
