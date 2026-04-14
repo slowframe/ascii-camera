@@ -38,7 +38,7 @@
     text-align: center;
   }
   .controls-toggle:hover { background: #1a1a1a; }
-  .controls-toggle .arrow { display: inline-bock; transition: transform 0.2s; }
+  .controls-toggle .arrow { display: inline-block; transition: transform 0.2s; }
   .controls-wrapper.collapsed .controls-toggle .arrow { transform: rotate(180deg); }
 
   .controls {
@@ -88,7 +88,7 @@
   .ctrl-group { text-align: center; }
 
   .size-val {
-    display: inline-bock;
+    display: inline-block;
     min-width: 2.2em;
     text-align: right;
     color: #0f0;
@@ -159,14 +159,14 @@
   }
 
   @media (max-width: 600px) {
-    .controls-toggle { display: bock; }
+    .controls-toggle { display: block; }
     .controls { gap: 0.5rem; padding: 6px 8px; }
     .ctrl-group { font-size: 0.65rem; }
   }
 
   #debug-grid {
     display: none;
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns: repeat(4, 1fr);
     grid-template-rows: repeat(2, 1fr);
     gap: 2px;
     background: #111;
@@ -207,7 +207,7 @@
     line-height: 1.4;
   }
   .debug-label-title {
-    display: bock;
+    display: block;
     font-size: 0.72rem;
     font-weight: bold;
     letter-spacing: 0.1em;
@@ -215,12 +215,12 @@
     text-transform: uppercase;
   }
   .debug-label-desc {
-    display: bock;
+    display: block;
     font-size: 0.64rem;
     letter-spacing: 0.02em;
     color: #5a5;
     white-space: normal;
-    max-width: 22ch;
+    max-width: 38ch;
     line-height: 1.35;
   }
 
@@ -280,11 +280,15 @@
       <label>Contrast <span class="size-val" id="contrast-val">1.00</span></label><br>
       <input type="range" id="contrast-slider" min="0.5" max="3.0" value="1.0" step="0.05" oninput="document.getElementById('contrast-val').textContent = parseFloat(this.value).toFixed(2); flushBuffer();">
     </div>
+    <div class="ctrl-group">
+      <label>BG <span class="size-val" id="bg-val">0.08</span></label><br>
+      <input type="range" id="bg-slider" min="0.0" max="0.4" value="0.08" step="0.01" oninput="document.getElementById('bg-val').textContent = parseFloat(this.value).toFixed(2); flushBuffer();">
+    </div>
     <button id="start-btn" aria-label="Start camera" onclick="startCamera()">▶ Start</button>
     <button id="stop-btn" class="stop" aria-label="Stop camera" onclick="stopCamera()" style="display:none;">■ Stop</button>
     <button id="debug-btn" class="debug-btn" aria-label="Toggle debug view" onclick="toggleDebug()">DEBUG</button>
-    <div class="ctrl-group">
-      <span id="debug-display" style="color:#0f0; font-size:0.75rem; white-space:nowrap; display:inline-bock; min-width:16ch; font-variant-numeric:tabular-nums;">—</span>
+    <div class="ctrl-group" style="width:24ch; flex-shrink:0;">
+      <span id="debug-display" style="color:#0f0; font-size:0.75rem; white-space:nowrap; display:inline-block; font-variant-numeric:tabular-nums;">—</span>
     </div>
   </div>
 </div>
@@ -300,9 +304,13 @@
     <canvas id="dbg-raw"></canvas>
     <span class="debug-label"><span class="debug-label-title">RAW</span><span class="debug-label-desc">source pixels before any processing</span></span>
   </div>
+  <div class="debug-panel" id="panel-mask">
+    <canvas id="dbg-mask"></canvas>
+    <span class="debug-label"><span class="debug-label-title">MASK</span><span class="debug-label-desc">segmentation confidence — white = person, black = background</span></span>
+  </div>
   <div class="debug-panel" id="panel-luma">
     <canvas id="dbg-luma"></canvas>
-    <span class="debug-label"><span class="debug-label-title">LUMA</span><span class="debug-label-desc">brightness extracted per cell — drives character density</span></span>
+    <span class="debug-label"><span class="debug-label-title">LUMA</span><span class="debug-label-desc">brightness post-mask — background attenuated before pipeline</span></span>
   </div>
   <div class="debug-panel" id="panel-contrast">
     <canvas id="dbg-contrast"></canvas>
@@ -320,6 +328,9 @@
     <canvas id="dbg-palette"></canvas>
     <span class="debug-label"><span class="debug-label-title">PALETTE SNAP</span><span class="debug-label-desc">color forced into a fixed palette — image recast in historic terminal color space</span></span>
   </div>
+  <div class="debug-panel" id="panel-empty" style="opacity:0.18;">
+    <span class="debug-label" style="top:50%;left:50%;transform:translate(-50%,-50%);"><span class="debug-label-title" style="text-align:center;">—</span></span>
+  </div>
 </div>
 
 <div id="fps-display"></div>
@@ -331,6 +342,52 @@
 let FRAME_INTERVAL = 1000 / 18;
 
 let debugMode = false;
+
+// ── MediaPipe segmentation ────────────────────────────────────────────────
+let selfieSegmentation = null;
+let maskReady          = false;
+// maskCanvas lives at cell resolution and is X-mirrored to match samplerCanvas
+const maskCanvas = document.createElement('canvas');
+const maskCtx    = maskCanvas.getContext('2d', { willReadFrequently: true });
+let maskData     = null; // Float32Array, one confidence value per cell
+
+function initSegmentation() {
+  const script = document.createElement('script');
+  script.src = 'https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/selfie_segmentation.js';
+  script.crossOrigin = 'anonymous';
+  script.onload = () => {
+    selfieSegmentation = new SelfieSegmentation({ locateFile: f =>
+      `https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/${f}`
+    });
+    selfieSegmentation.setOptions({ modelSelection: 1 });
+    selfieSegmentation.onResults(onSegmentationResults);
+    maskReady = true;
+  };
+  document.head.appendChild(script);
+}
+
+function onSegmentationResults(results) {
+  if (!results.segmentationMask) return;
+  const w = maskCanvas.width;
+  const h = maskCanvas.height;
+  // No mirror needed — samplerCanvas (sent to MP) is already cropped+mirrored
+  // Clear first so stale pixels from previous frame don't bleed through
+  maskCtx.clearRect(0, 0, w, h);
+  maskCtx.drawImage(results.segmentationMask, 0, 0, w, h);
+  const raw   = maskCtx.getImageData(0, 0, w, h).data;
+  const cells = w * h;
+  maskData = new Float32Array(cells);
+  for (let i = 0; i < cells; i++) {
+    maskData[i] = raw[i * 4 + 3] / 255; // alpha = confidence
+  }
+}
+
+// Mask is always active once MediaPipe loads.
+// BG slider controls background attenuation: 0 = hard black, >0 = soft ghost.
+function getMaskWeight(cellIdx, bgLevel) {
+  if (!maskData || maskData.length <= cellIdx) return 1.0;
+  return maskData[cellIdx] > 0.5 ? 1.0 : bgLevel;
+}
 
 function toggleDebug() {
   debugMode = !debugMode;
@@ -470,14 +527,17 @@ const paletteEl    = document.getElementById('palette');
 const fontSizeEl   = document.getElementById('font-size');
 const contrastSlider = document.getElementById('contrast-slider');
 const brightSlider   = document.getElementById('bright-slider');
+const bgSlider       = document.getElementById('bg-slider');
 
 const dbgRaw       = document.getElementById('dbg-raw');
+const dbgMask      = document.getElementById('dbg-mask');
 const dbgLuma      = document.getElementById('dbg-luma');
 const dbgContrast  = document.getElementById('dbg-contrast');
 const dbgChar      = document.getElementById('dbg-char');
 const dbgColorlift = document.getElementById('dbg-colorlift');
 const dbgPalette   = document.getElementById('dbg-palette');
 const dbgCtxRaw       = dbgRaw.getContext('2d');
+const dbgCtxMask      = dbgMask.getContext('2d');
 const dbgCtxLuma      = dbgLuma.getContext('2d');
 const dbgCtxContrast  = dbgContrast.getContext('2d');
 const dbgCtxChar      = dbgChar.getContext('2d');
@@ -518,7 +578,7 @@ function calcGrid(videoWidth, videoHeight, fontSize) {
   const availH = cachedContainerRect.height;
 
   const cols = Math.max(10, Math.floor(availW / charSize.w));
-  const rows = Math.max(5, Math.floor(availH / charSize.h));
+  const rows = Math.max(5,  Math.floor(availH / charSize.h));
 
   const gridAspect = (cols * charSize.w) / (rows * charSize.h);
   const vidAspect  = videoWidth / videoHeight;
@@ -546,9 +606,10 @@ async function startCamera() {
     stopBtn.style.display = '';
     messageEl.style.display = 'none';
     autoCollapseOnMobile();
+    initSegmentation();
     animId = requestAnimationFrame(render);
   } catch (err) {
-    messageEl.textContent = 'Camera access denied or unavailabe.\n' + err.message;
+    messageEl.textContent = 'Camera access denied or unavailable.\n' + err.message;
     messageEl.style.display = '';
   }
 }
@@ -564,6 +625,7 @@ function stopCamera() {
   fpsEl.textContent = '';
   sizeEl.textContent = '';
   debugEl.textContent = '—';
+  maskData = null;
 }
 
 function render(timestamp) {
@@ -588,13 +650,15 @@ function render(timestamp) {
   const fontSize    = parseInt(fontSizeEl.value);
   const contrast    = parseFloat(contrastSlider.value);
   const gamma       = parseFloat(brightSlider.value);
+  const bgLevel     = parseFloat(bgSlider.value);
 
   const { cols, rows, charSize, crop } = calcGrid(video.videoWidth, video.videoHeight, fontSize);
 
   sizeEl.textContent = cols + '×' + rows;
 
+  // ── Step 0: sample video at cell resolution ───────────────────────────
   if (samplerCanvas.width !== cols || samplerCanvas.height !== rows) {
-    samplerCanvas.width = cols;
+    samplerCanvas.width  = cols;
     samplerCanvas.height = rows;
   }
   samplerCtx.save();
@@ -603,6 +667,17 @@ function render(timestamp) {
   samplerCtx.drawImage(video, crop.sx, crop.sy, crop.sw, crop.sh, 0, 0, cols, rows);
   samplerCtx.restore();
 
+  // ── Step 1: send frame to MediaPipe (async, results arrive next frame) ─
+  if (maskReady && selfieSegmentation) {
+    if (maskCanvas.width !== cols || maskCanvas.height !== rows) {
+      maskCanvas.width  = cols;
+      maskCanvas.height = rows;
+      maskData = null;
+    }
+    selfieSegmentation.send({ image: samplerCanvas }).catch(() => {});
+  }
+
+  // ── Step 2: read pixels ────────────────────────────────────────────────
   const imageData = samplerCtx.getImageData(0, 0, cols, rows);
   const px = imageData.data;
   const cLen = charset.length;
@@ -611,7 +686,7 @@ function render(timestamp) {
   const canvasH = Math.round(rows * charSize.h);
 
   if (asciiCanvas.width !== canvasW || asciiCanvas.height !== canvasH) {
-    asciiCanvas.width = canvasW;
+    asciiCanvas.width  = canvasW;
     asciiCanvas.height = canvasH;
   }
 
@@ -626,52 +701,66 @@ function render(timestamp) {
     frameBufferRows = rows;
   }
 
-  const isMono = (paletteName === 'green' || paletteName === 'amber');
+  const isMono     = (paletteName === 'green' || paletteName === 'amber');
   const isTrueColor = (paletteName === 'truecolor');
-  const palData = (!isMono && !isTrueColor) ? getPaletteInfo(paletteName) : null;
-  const monoColor = paletteName === 'green' ? '#00ff41'
-                  : paletteName === 'amber' ? '#ffb000' : null;
+  const palData    = (!isMono && !isTrueColor) ? getPaletteInfo(paletteName) : null;
+  const monoColor  = paletteName === 'green' ? '#00ff41'
+                   : paletteName === 'amber' ? '#ffb000' : null;
+
+  const hasMask = maskReady && maskData && maskData.length === cols * rows;
 
   let dirtyChar = 0, dirtyColor = 0;
   for (let y = 0; y < rows; y++) {
     const py = y * charSize.h;
     for (let x = 0; x < cols; x++) {
-      const i = (y * cols + x) * 4;
+      const cellIdx = y * cols + x;
+      const i       = cellIdx * 4;
       const rRaw = px[i], gRaw = px[i + 1], bRaw = px[i + 2];
 
+      // ── Step 1 (pipeline): apply mask weight ──────────────────────────
+      // maskWeight is 1 for foreground, bgLevel (or 0) for background.
+      // This is the first thing that touches brightness — mask gates all downstream.
+      const maskWeight = hasMask ? getMaskWeight(cellIdx, bgLevel) : 1.0;
+
       let bright = (0.299 * rRaw + 0.587 * gRaw + 0.114 * bRaw) / 255;
+      bright *= maskWeight;
 
-      bright = Math.max(0, Math.min(1, (bright - 0.5) * contrast + 0.5));
+      // Guard: fully-masked cells bypass contrast curve (would lift to 0.5 midpoint otherwise)
+      bright = bright === 0.0 ? 0.0
+             : Math.max(0, Math.min(1, (bright - 0.5) * contrast + 0.5));
 
+      // brightQ and colorKey both encode maskWeight so the dirty buffer
+      // correctly detects changes when bgLevel or hardMask changes.
       const brightQ = Math.round(bright * 8) / 8;
 
       const ch = charset[Math.floor(bright * (cLen - 1))];
 
       const brightLifted = Math.pow(bright, gamma);
-
       const scale = brightLifted / (bright || 1e-5);
-      let r = Math.min(255, rRaw * scale) & 0xE0;
-      let g = Math.min(255, gRaw * scale) & 0xE0;
-      let b = Math.min(255, bRaw * scale) & 0xE0;
+      const rEff = rRaw * maskWeight;
+      const gEff = gRaw * maskWeight;
+      const bEff = bRaw * maskWeight;
+      let r = Math.min(255, rEff * scale) & 0xE0;
+      let g = Math.min(255, gEff * scale) & 0xE0;
+      let b = Math.min(255, bEff * scale) & 0xE0;
 
-      let color;
-      let colorKey;
+      let color, colorKey;
       if (isMono) {
-        color = monoColor;
+        color    = monoColor;
         colorKey = monoColor;
       } else if (isTrueColor) {
-        color = `rgb(${r},${g},${b})`;
+        color    = `rgb(${r},${g},${b})`;
         colorKey = color;
       } else {
         const idx = nearestColor(r, g, b, palData.cache);
-        const c = palData.pal[idx];
-        color = `rgb(${c[0]},${c[1]},${c[2]})`;
-        colorKey = nearestColor(r, g, b, paletteLookups.ansi16);
+        const c   = palData.pal[idx];
+        color     = `rgb(${c[0]},${c[1]},${c[2]})`;
+        colorKey  = nearestColor(r, g, b, paletteLookups.ansi16);
       }
 
-      const bufIdx = y * cols + x;
-      const prev = frameBuffer[bufIdx];
-      const chChanged = !prev || prev.brightQ !== brightQ;
+      const bufIdx = cellIdx;
+      const prev   = frameBuffer[bufIdx];
+      const chChanged    = !prev || prev.brightQ !== brightQ;
       const colorChanged = !prev || prev.colorKey !== colorKey;
 
       if (!chChanged && !colorChanged) continue;
@@ -688,37 +777,42 @@ function render(timestamp) {
       asciiCtx.fillText(ch, x * charSize.w, py);
     }
   }
-  const total = cols * rows;
+  const total    = cols * rows;
   const pctChar  = ((dirtyChar  / total) * 100).toFixed(1);
   const pctColor = ((dirtyColor / total) * 100).toFixed(1);
   debugEl.textContent = pctChar + '% chr  ' + pctColor + '% col  ' + total + ' cells';
 
   if (debugMode) {
-    renderDebugPanels(px, cols, rows, charset, cLen, contrast, gamma, paletteName, isMono, isTrueColor, palData, monoColor);
+    renderDebugPanels(px, cols, rows, charset, cLen, contrast, gamma,
+                      paletteName, isMono, isTrueColor, palData, monoColor,
+                      bgLevel, hasMask);
   }
 }
 
-function renderDebugPanels(px, cols, rows, charset, cLen, contrast, gamma, paletteName, isMono, isTrueColor, palData, monoColor) {
+function renderDebugPanels(px, cols, rows, charset, cLen, contrast, gamma,
+                            paletteName, isMono, isTrueColor, palData, monoColor,
+                            bgLevel, hasMask) {
   const fullW = asciiCanvas.width;
   const fullH = asciiCanvas.height;
 
-  [dbgRaw, dbgLuma, dbgContrast, dbgChar, dbgColorlift, dbgPalette].forEach(c => {
+  [dbgRaw, dbgMask, dbgLuma, dbgContrast, dbgChar, dbgColorlift, dbgPalette].forEach(c => {
     if (c.width !== fullW || c.height !== fullH) {
       c.width  = fullW;
       c.height = fullH;
     }
   });
 
-  const fontSize  = parseInt(fontSizeEl.value);
-  const charSize  = cachedCharSize || measureChar(fontSize);
-  const cellW     = charSize.w;
-  const cellH     = charSize.h;
+  const fontSize = parseInt(fontSizeEl.value);
+  const charSize = cachedCharSize || measureChar(fontSize);
+  const cellW    = charSize.w;
+  const cellH    = charSize.h;
 
-  [dbgCtxLuma, dbgCtxContrast, dbgCtxChar, dbgCtxColorlift, dbgCtxPalette].forEach(ctx => {
+  [dbgCtxMask, dbgCtxLuma, dbgCtxContrast, dbgCtxChar, dbgCtxColorlift, dbgCtxPalette].forEach(ctx => {
     ctx.fillStyle = '#000';
     ctx.fillRect(0, 0, fullW, fullH);
   });
 
+  // RAW: mirrored video pixels as sampled
   dbgCtxRaw.drawImage(samplerCanvas, 0, 0, fullW, fullH);
 
   const fontDecl = fontSize + 'px "Courier New", monospace';
@@ -730,37 +824,61 @@ function renderDebugPanels(px, cols, rows, charset, cLen, contrast, gamma, palet
   for (let y = 0; y < rows; y++) {
     const py = y * cellH;
     for (let x = 0; x < cols; x++) {
-      const i    = (y * cols + x) * 4;
-      const rRaw = px[i], gRaw = px[i+1], bRaw = px[i+2];
-      const cellX  = x * cellW;
+      const cellIdx = y * cols + x;
+      const i       = cellIdx * 4;
+      const rRaw    = px[i], gRaw = px[i+1], bRaw = px[i+2];
+      const cellX   = x * cellW;
 
-      const luma  = (0.299 * rRaw + 0.587 * gRaw + 0.114 * bRaw) / 255;
-      const lumaV = Math.round(luma * 255);
+      // MASK panel: grayscale confidence map
+      if (hasMask) {
+        const conf = maskData[cellIdx];
+        const mv   = Math.round(conf * 255);
+        dbgCtxMask.fillStyle = 'rgb(' + mv + ',' + mv + ',' + mv + ')';
+      } else {
+        dbgCtxMask.fillStyle = '#1a1a1a';
+      }
+      dbgCtxMask.fillRect(cellX, py, cellW, cellH);
+
+      // Compute maskWeight — same logic as render()
+      const maskWeight = hasMask ? getMaskWeight(cellIdx, bgLevel) : 1.0;
+
+      // LUMA panel: post-mask brightness (mask is step 0, so this reflects it)
+      const lumaRaw  = (0.299 * rRaw + 0.587 * gRaw + 0.114 * bRaw) / 255;
+      const lumaM    = lumaRaw * maskWeight;
+      const lumaV    = Math.round(lumaM * 255);
       dbgCtxLuma.fillStyle = 'rgb(' + lumaV + ',' + lumaV + ',' + lumaV + ')';
       dbgCtxLuma.fillRect(cellX, py, cellW, cellH);
 
-      const bright = Math.max(0, Math.min(1, (luma - 0.5) * contrast + 0.5));
+      // CONTRAST panel
+      const bright = lumaM === 0.0 ? 0.0
+                   : Math.max(0, Math.min(1, (lumaM - 0.5) * contrast + 0.5));
       const contV  = Math.round(bright * 255);
       dbgCtxContrast.fillStyle = 'rgb(' + contV + ',' + contV + ',' + contV + ')';
       dbgCtxContrast.fillRect(cellX, py, cellW, cellH);
 
+      // CHAR panel
       const ch = charset[Math.floor(bright * (cLen - 1))];
       if (ch !== ' ') {
         dbgCtxChar.fillStyle = '#fff';
         dbgCtxChar.fillText(ch, cellX, py);
       }
 
+      // COLOR LIFT panel
       const brightLifted = Math.pow(bright, gamma);
       const scale = brightLifted / (bright || 1e-5);
-      const rL = Math.round(Math.min(255, rRaw * scale));
-      const gL = Math.round(Math.min(255, gRaw * scale));
-      const bL = Math.round(Math.min(255, bRaw * scale));
+      const rEff  = rRaw * maskWeight;
+      const gEff  = gRaw * maskWeight;
+      const bEff  = bRaw * maskWeight;
+      const rL = Math.round(Math.min(255, rEff * scale));
+      const gL = Math.round(Math.min(255, gEff * scale));
+      const bL = Math.round(Math.min(255, bEff * scale));
       dbgCtxColorlift.fillStyle = 'rgb(' + rL + ',' + gL + ',' + bL + ')';
       dbgCtxColorlift.fillRect(cellX, py, cellW, cellH);
 
-      const r0 = Math.min(255, rRaw * scale) & 0xE0;
-      const g0 = Math.min(255, gRaw * scale) & 0xE0;
-      const b0 = Math.min(255, bRaw * scale) & 0xE0;
+      // PALETTE SNAP panel
+      const r0 = Math.min(255, rEff * scale) & 0xE0;
+      const g0 = Math.min(255, gEff * scale) & 0xE0;
+      const b0 = Math.min(255, bEff * scale) & 0xE0;
       let finalColor;
       if (isMono) {
         finalColor = monoColor;
