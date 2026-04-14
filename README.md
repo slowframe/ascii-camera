@@ -21,6 +21,8 @@ Camera access is required. The app runs entirely client-side.
 - Adjustable FPS (1–20)
 - Brightness slider (gamma lift) to compensate for ASCII coverage loss
 - Contrast slider
+- MediaPipe SelfieSegmentation — identifies the person in frame; background cells are attenuated by the BG slider before the render pipeline runs
+- BG slider (0–0.4) controls how much background luminance leaks through; 0 = hard black, higher = faint ghost
 - Dirty-cell frame buffer — only redraws cells that actually changed
 - Inline stats display showing % character changes, % color changes, and total cell count per frame
 - Mobile-friendly collapsible controls drawer
@@ -32,7 +34,7 @@ Camera access is required. The app runs entirely client-side.
 ### Pipeline Overview
 
 ```
-Webcam → sampler canvas → brightness/color per cell → charset lookup → palette lookup → canvas draw
+Webcam → sampler canvas → MediaPipe (async) → mask weight per cell → brightness/color → charset lookup → palette lookup → canvas draw
 ```
 
 ### 1. Video Capture
@@ -43,7 +45,15 @@ The browser's `getUserMedia` API provides webcam frames. Each frame is drawn int
 
 The renderer computes how many character columns and rows fit the container at the current font size. The video frame is center-cropped to match the grid's aspect ratio, avoiding distortion.
 
-### 3. Brightness and Contrast
+### 3. Person Segmentation
+
+The sampler canvas is sent to **MediaPipe SelfieSegmentation** (landscape model) each frame. Because it runs asynchronously, results arrive on the following frame — adding a single frame of latency that is not perceptible.
+
+`onSegmentationResults` extracts the segmentation mask's alpha channel into a `Float32Array` (`maskData`) at cell resolution. `getMaskWeight()` returns `1.0` for foreground cells (confidence > 0.5) and the BG slider value for background cells. This weight is the first thing applied in the per-cell loop, before luminance, contrast, or character selection.
+
+When MediaPipe has not yet loaded or no mask is available, `maskWeight` defaults to `1.0` so the app works normally without segmentation.
+
+### 4. Brightness and Contrast
 
 Per-cell luminance is computed using the standard weighted formula:
 
@@ -53,7 +63,7 @@ brightness = 0.299R + 0.587G + 0.114B
 
 Contrast is applied around the midpoint, then brightness is quantized into discrete steps to reduce flicker from camera noise.
 
-### 4. Gamma Lift
+### 5. Gamma Lift
 
 ASCII characters cover less than 100% of their cell area — even the densest characters like `@` or `█` top out around 60–70% coverage. This causes the output to read darker than the source image.
 
@@ -63,19 +73,19 @@ The brightness slider applies a power-curve gamma lift **before character select
 lifted = brightness ^ gamma   (gamma < 1.0 brightens midtones)
 ```
 
-### 5. Character Selection
+### 6. Character Selection
 
 The lifted brightness value indexes into the chosen character ramp. Darker cells map to sparse characters (spaces, dots); brighter cells map to denser characters (`@`, `#`, `█`).
 
 Braille mode dynamically generates a 256-character ramp sorted by dot density, giving sub-character resolution.
 
-### 6. Color Mapping
+### 7. Color Mapping
 
 The original pixel RGB is used for color output — independent of the brightness used for character selection. A second gamma lift is applied to the RGB values to match the visual brightness of the character layer.
 
 For palette modes (xterm 256, ANSI 16, CGA, Grayscale 24), a 4096-entry precomputed lookup table accelerates nearest-color matching.
 
-### 7. Dirty-Cell Rendering
+### 8. Dirty-Cell Rendering
 
 The renderer stores the previous frame's character and color for every cell. A cell is only redrawn when:
 - The brightness has changed enough to select a different character
@@ -107,7 +117,7 @@ Any modern browser with webcam access and support for:
 - HTML5 Canvas
 - `getImageData`
 
-No external scripts, libraries, or CDN dependencies.
+MediaPipe SelfieSegmentation is loaded from `cdn.jsdelivr.net` at runtime when the camera starts. No other external dependencies.
 
 ---
 
@@ -130,6 +140,10 @@ Character redraw is gated on `brightQ` (brightness quantized to 8 steps). Color 
 ### The palette LUT must be rebuilt if you change a palette
 
 `buildNearestLookup()` precomputes a 4096-entry lookup table for each palette at load time. If you add a new palette or modify an existing one's colors, you must add a corresponding `buildNearestLookup()` call and register the result in `paletteLookups`. The LUT is not rebuilt dynamically.
+
+### The mask is applied before contrast — do not reorder
+
+`maskWeight` scales raw luminance before the contrast curve runs. If you apply contrast first and mask after, the contrast curve lifts fully-masked cells (brightness = 0) to the midpoint (0.5), making invisible background cells reappear as gray. The per-cell loop guards against this with an explicit `bright === 0.0` check that bypasses the curve — that guard is also load-bearing.
 
 ### Canvas resize resets the 2D drawing state
 
