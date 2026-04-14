@@ -4,11 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Commands
 
-```bash
-./test.sh        # no automated tests — browser-only app, exits 0
-```
-
-Open `index.html` directly in a browser to run the app. No build step, no server, no dependencies.
+No automated tests — browser-only app. Open `index.html` directly in a browser to run the app. No build step, no server, no dependencies.
 
 ## Architecture
 
