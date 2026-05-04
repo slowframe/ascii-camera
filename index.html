@@ -350,17 +350,19 @@ let maskReady          = false;
 const maskCanvas = document.createElement('canvas');
 const maskCtx    = maskCanvas.getContext('2d', { willReadFrequently: true });
 let maskData     = null; // Float32Array, one confidence value per cell
+let segSending   = false;
 
 function initSegmentation() {
   const script = document.createElement('script');
   script.src = 'https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/selfie_segmentation.js';
   script.crossOrigin = 'anonymous';
-  script.onload = () => {
+  script.onload = async () => {
     selfieSegmentation = new SelfieSegmentation({ locateFile: f =>
       `https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/${f}`
     });
     selfieSegmentation.setOptions({ modelSelection: 1 });
     selfieSegmentation.onResults(onSegmentationResults);
+    await selfieSegmentation.initialize();
     maskReady = true;
   };
   document.head.appendChild(script);
@@ -376,7 +378,7 @@ function onSegmentationResults(results) {
   maskCtx.drawImage(results.segmentationMask, 0, 0, w, h);
   const raw   = maskCtx.getImageData(0, 0, w, h).data;
   const cells = w * h;
-  maskData = new Float32Array(cells);
+  if (!maskData || maskData.length !== cells) maskData = new Float32Array(cells);
   for (let i = 0; i < cells; i++) {
     maskData[i] = raw[i * 4 + 3] / 255; // alpha = confidence
   }
@@ -668,13 +670,16 @@ function render(timestamp) {
   samplerCtx.restore();
 
   // ── Step 1: send frame to MediaPipe (async, results arrive next frame) ─
-  if (maskReady && selfieSegmentation) {
+  if (maskReady && selfieSegmentation && !segSending) {
     if (maskCanvas.width !== cols || maskCanvas.height !== rows) {
       maskCanvas.width  = cols;
       maskCanvas.height = rows;
       maskData = null;
     }
-    selfieSegmentation.send({ image: samplerCanvas }).catch(() => {});
+    segSending = true;
+    selfieSegmentation.send({ image: samplerCanvas })
+      .catch(() => {})
+      .finally(() => { segSending = false; });
   }
 
   // ── Step 2: read pixels ────────────────────────────────────────────────
