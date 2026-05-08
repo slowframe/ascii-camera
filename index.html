@@ -286,6 +286,7 @@
     </div>
     <button id="start-btn" aria-label="Start camera" onclick="startCamera()">▶ Start</button>
     <button id="stop-btn" class="stop" aria-label="Stop camera" onclick="stopCamera()" style="display:none;">■ Stop</button>
+    <button id="export-btn" aria-label="Export as PNG" onclick="exportPNG()" style="display:none;">⬇ PNG</button>
     <button id="debug-btn" class="debug-btn" aria-label="Toggle debug view" onclick="toggleDebug()">DEBUG</button>
     <div class="ctrl-group" style="width:24ch; flex-shrink:0;">
       <span id="debug-display" style="color:#0f0; font-size:0.75rem; white-space:nowrap; display:inline-block; font-variant-numeric:tabular-nums;">—</span>
@@ -523,6 +524,7 @@ const sizeEl      = document.getElementById('size-display');
 const debugEl     = document.getElementById('debug-display');
 const startBtn       = document.getElementById('start-btn');
 const stopBtn        = document.getElementById('stop-btn');
+const exportBtn      = document.getElementById('export-btn');
 const controlsWrapper = document.getElementById('controls-wrapper');
 const charsetEl    = document.getElementById('charset');
 const paletteEl    = document.getElementById('palette');
@@ -606,6 +608,7 @@ async function startCamera() {
     await video.play();
     startBtn.style.display = 'none';
     stopBtn.style.display = '';
+    exportBtn.style.display = '';
     messageEl.style.display = 'none';
     autoCollapseOnMobile();
     initSegmentation();
@@ -622,12 +625,20 @@ function stopCamera() {
   video.srcObject = null;
   startBtn.style.display = '';
   stopBtn.style.display = 'none';
+  exportBtn.style.display = 'none';
   messageEl.textContent = 'Camera stopped.';
   messageEl.style.display = '';
   fpsEl.textContent = '';
   sizeEl.textContent = '';
   debugEl.textContent = '—';
   maskData = null;
+}
+
+function exportPNG() {
+  const a = document.createElement('a');
+  a.download = `ascii-cam-${Date.now()}.png`;
+  a.href = asciiCanvas.toDataURL('image/png');
+  a.click();
 }
 
 function render(timestamp) {

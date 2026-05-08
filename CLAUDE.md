@@ -33,6 +33,14 @@ getUserMedia → sampler canvas (cols×rows px) → MediaPipe (async) → getIma
 
 When debug mode is active, `renderDebugPanels()` fills a `#debug-grid` with: **RAW** (mirrored source pixels), **MASK** (segmentation confidence, grayscale), **LUMA** (post-mask brightness), **CONTRAST** (curve applied), **CHAR** (glyph chosen, white on black), **COLOR LIFT** (gamma-compensated RGB), **PALETTE SNAP** (final palette color + glyph), and one empty placeholder cell.
 
+### MediaPipe initialization
+
+`initSegmentation()` dynamically injects the CDN script. `script.onload` is `async` and calls `await selfieSegmentation.initialize()` before setting `maskReady = true` — this ensures the WASM binary and TFLite model are fully loaded before any frame is sent. A `segSending` flag serializes `send()` calls so concurrent dispatches cannot corrupt the callback pipeline.
+
+### Export
+
+`exportPNG()` calls `asciiCanvas.toDataURL('image/png')` and triggers a download via a temporary `<a download>` element. The **⬇ PNG** button is shown/hidden alongside the Stop button.
+
 ### Key design constraints (do not violate)
 
 - **Gamma lift split is intentional**: `bright` (pre-gamma) drives character selection; `brightLifted` (post-gamma) drives RGB color scaling. Merging them corrupts luminance fidelity.
